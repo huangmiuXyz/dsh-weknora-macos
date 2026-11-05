@@ -12,7 +12,6 @@
  */
 import { normalizeConfig } from './config.js'
 import { KeyGate } from './gate.js'
-import { restorePersistedEnv } from './persist.js'
 import { registerApiKeyRoute, registerBrowserRoute } from './routes.js'
 import { subprocessSpawner } from './spawn.js'
 import { WeknoraSupervisor } from './supervisor.js'
@@ -26,7 +25,7 @@ export const name = 'dsh-weknora-macos'
  * around it: the seam owns the process range, scrubs the parent environment, and
  * reaps a forgotten server when the service is disposed.
  */
-export const inject = ['tools', 'subprocess']
+export const inject = ['tools', 'subprocess', 'credentials']
 
 /** Host log line; console output lands in the DSH host log. */
 function hostLog(message) {
@@ -47,16 +46,17 @@ export function apply(ctx, rawConfig = {}) {
   // Releases a `weknora_run` call that is waiting for the card's save button.
   const gate = new KeyGate()
 
-  // A key saved in an earlier launch lives in the LaunchAgent, and launchd only
-  // republishes it when its job runs at login. A DSH that was started from a
-  // terminal, or reopened without a full logout, must not report itself
-  // unconfigured — restore it here, before the tool is registered, so
-  // `isConfigured()` is already correct on the first call.
-  restorePersistedEnv({ log: hostLog }).catch((error) => hostLog(`restore failed: ${error?.message ?? error}`))
+
+  // The credential seam is passed as a getter, never captured at mount: a key
+  // stored while the plugin is live must reach the very next tool call.
+  const credentials = () => ctx.credentials
 
   // Registering through `effect` makes the tool disappear with the fiber, which is
   // what an HMR reload or a profile disable expects.
-  ctx.effect(() => ctx.tools.register(weknoraRunTool(supervisor, { gate })), 'weknora: weknora_run tool')
+  ctx.effect(
+    () => ctx.tools.register(weknoraRunTool(supervisor, { gate, credentials }), 'weknora: weknora_run tool'),
+    'weknora: weknora_run tool'
+  )
 
   // The tool card's backend: a same-origin route the client half posts a key to.
   // `webServer` is awaited rather than probed: at apply time the service is not
@@ -65,7 +65,12 @@ export function apply(ctx, rawConfig = {}) {
   // keeps the tool and has no card backend.
   ctx.inject(['webServer'], (hostCtx) => {
     hostCtx.effect(() => {
-      const offKey = registerApiKeyRoute(hostCtx, supervisor, { config, gate, log: hostLog })
+      const offKey = registerApiKeyRoute(hostCtx, supervisor, {
+        config,
+        credentials,
+        gate,
+        log: hostLog
+      })
       const offOpen = registerBrowserRoute(hostCtx, supervisor, { config, log: hostLog })
       return () => {
         offKey()

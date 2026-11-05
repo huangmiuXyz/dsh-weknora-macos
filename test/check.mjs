@@ -19,7 +19,8 @@ import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 import { normalizeConfig } from '../src/config.js'
-import { LAUNCH_AGENT_LABEL, launchAgentPath, launchAgentPlist, readPersistedEnvSync } from '../src/persist.js'
+import { maskKey, saveApiKey, validateApiKey } from '../src/apikey.js'
+import { clearApiKey, resolveApiKey, storeApiKey } from '../src/credentials.js'
 import { TOOL_NAME } from '../src/protocol.js'
 import {
   assetPaths,
@@ -462,61 +463,104 @@ test(
     }
   }
 )
-// --- macOS persistence -------------------------------------------------------
 
-test('launchAgentPlist declares one job that republishes both variables', () => {
-  const body = launchAgentPlist({
-    WEKNORA_API_KEY: 'sk-abc123',
-    WEKNORA_BASE_URL: 'http://127.0.0.1:18080/api/v1'
-  })
-  assert.ok(body.includes(`<string>${LAUNCH_AGENT_LABEL}</string>`), 'the label is stable')
-  assert.ok(body.includes('<key>RunAtLoad</key>'), 'it must run at every login')
-  assert.ok(body.includes('<key>WEKNORA_API_KEY</key>'), 'the key is stored in the job')
-  assert.ok(body.includes('<string>sk-abc123</string>'))
-  // The republisher expands $NAME, so no secret is ever pasted into the script.
-  assert.ok(body.includes('launchctl setenv WEKNORA_API_KEY "$WEKNORA_API_KEY"'))
-  assert.ok(!body.includes('launchctl setenv WEKNORA_API_KEY "sk-abc123"'), 'no secret in argv')
+// --- credential seam ---------------------------------------------------------
+
+/** A minimal in-memory stand-in for `ctx.credentials`. */
+function fakeCredentials(initial = {}) {
+  const store = new Map(Object.entries(initial))
+  return {
+    calls: [],
+    async resolve(ref) {
+      this.calls.push(['resolve', ref])
+      return store.has(ref) ? { value: store.get(ref) } : undefined
+    },
+    async set(ref, value) {
+      this.calls.push(['set', ref])
+      store.set(ref, value)
+    },
+    async unset(ref) {
+      this.calls.push(['unset', ref])
+      store.delete(ref)
+    }
+  }
+}
+
+test('resolveApiKey treats blank and missing values as unconfigured', async () => {
+  assert.equal(await resolveApiKey(fakeCredentials()), undefined, 'nothing stored')
+  assert.equal(await resolveApiKey(fakeCredentials({ WEKNORA_API_KEY: '   ' })), undefined, 'blank is absent')
+  assert.equal(await resolveApiKey(fakeCredentials({ WEKNORA_API_KEY: ' sk-abc12345 ' })), 'sk-abc12345', 'trimmed')
+  assert.equal(await resolveApiKey(undefined), undefined, 'a composition without the seam')
+  assert.equal(await resolveApiKey(() => fakeCredentials({ WEKNORA_API_KEY: 'sk-live-999' })), 'sk-live-999', 'a getter is resolved per call')
 })
 
-test('launchAgentPlist escapes XML rather than emitting a broken plist', () => {
-  const body = launchAgentPlist({ WEKNORA_API_KEY: 'a&b<c>d', WEKNORA_BASE_URL: 'http://127.0.0.1:18080/api/v1' })
-  assert.ok(body.includes('a&amp;b&lt;c&gt;d'))
-  assert.ok(!body.includes('a&b<c>d'))
+test('resolveApiKey swallows a failing seam instead of breaking a tool call', async () => {
+  const broken = { async resolve() { throw new Error('vault locked') } }
+  assert.equal(await resolveApiKey(broken), undefined)
 })
 
-test('readPersistedEnvSync returns {} instead of throwing on a missing file', () => {
-  assert.deepEqual(readPersistedEnvSync('/nonexistent/weknora-env.plist'), {})
+test('storeApiKey and clearApiKey drive the seam', async () => {
+  const service = fakeCredentials()
+  await storeApiKey(service, 'sk-new-key-123')
+  assert.equal(await resolveApiKey(service), 'sk-new-key-123')
+  await clearApiKey(service)
+  assert.equal(await resolveApiKey(service), undefined)
+  // Clearing twice is not an error: the card may retry a stale request.
+  await clearApiKey(service)
 })
 
-test('launchAgentPath lives under the user LaunchAgents directory', () => {
-  assert.equal(
-    launchAgentPath('/Users/x'),
-    `/Users/x/Library/LaunchAgents/${LAUNCH_AGENT_LABEL}.plist`
-  )
+test('storeApiKey explains a missing seam instead of writing nothing', async () => {
+  await assert.rejects(() => storeApiKey(undefined, 'sk-x'), /credentials 服务/u)
 })
 
-// --- exec bit ----------------------------------------------------------------
+test('saveApiKey validates before storing', async () => {
+  const stored = []
+  const store = async (value) => { stored.push(value) }
 
-test('ensureExecutable restores the mode bit a tarball install strips', async () => {
-  const dir = await tempDir('weknora-exec-')
-  const exe = path.join(dir, 'WeKnora-lite')
-  await fsp.writeFile(exe, '#!/bin/sh\nexit 0\n')
-  // What pnpm/npm leave behind: 0644, no exec bit for anyone.
-  await fsp.chmod(exe, 0o644)
-
-  const first = await ensureExecutable(exe)
-  assert.equal(first.changed, true, 'a 0644 binary is repaired')
-  assert.ok(((await fsp.stat(exe)).mode & 0o111) !== 0, 'it is executable afterwards')
-
-  const second = await ensureExecutable(exe)
-  assert.equal(second.changed, false, 'a second call is a no-op')
-
-  await fsp.rm(dir, { recursive: true, force: true })
-})
-
-test('ensureExecutable reports an unreadable path instead of a bare EACCES', async () => {
   await assert.rejects(
-    () => ensureExecutable('/nonexistent/WeKnora-lite'),
-    /无法为 .* 添加执行权限/u
+    () => saveApiKey({ apiKey: 'sk-shrt', host: '127.0.0.1', port: 18080, store, fetchImpl: async () => ({ ok: true }) }),
+    /太短/u
   )
+  assert.equal(stored.length, 0, 'a rejected key is never stored')
+
+  await assert.rejects(
+    () => saveApiKey({
+      apiKey: 'sk-aaaaaaaa',
+      host: '127.0.0.1',
+      port: 18080,
+      store,
+      fetchImpl: async () => ({ ok: false, status: 401, json: async () => ({ error: { message: 'nope' } }) })
+    }),
+    /API Key 无效/u
+  )
+  assert.equal(stored.length, 0, 'a key the server rejects is never stored')
+
+  const result = await saveApiKey({
+    apiKey: 'sk-bbbbbbbb',
+    host: '127.0.0.1',
+    port: 18080,
+    store,
+    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({}) })
+  })
+  assert.equal(result.configured, true)
+  assert.equal(result.baseUrl, 'http://127.0.0.1:18080/api/v1')
+  assert.equal(stored[0], 'sk-bbbbbbbb', 'the validated key is what gets stored')
+  assert.equal(result.hint, 'sk-****bbbb', 'the card only ever sees a mask')
+})
+
+test('validateApiKey names the address it could not reach', async () => {
+  await assert.rejects(
+    () => validateApiKey({
+      apiKey: 'sk-x',
+      baseUrl: 'http://127.0.0.1:9/api/v1',
+      fetchImpl: async () => { throw new Error('ECONNREFUSED') }
+    }),
+    /无法连接 WeKnora/u
+  )
+})
+
+test('maskKey never leaks a full key', () => {
+  assert.equal(maskKey(''), '')
+  assert.equal(maskKey('short'), '****')
+  assert.equal(maskKey('sk-1234567890abcdef'), 'sk-****cdef')
 })

@@ -64,46 +64,29 @@ weknora_run()  →  { running, baseUrl, port, state, host, dataDir, startupMs?, 
 - **已配置**：显示掩码 `sk-****xxxx` 与「更换」。
 - **在浏览器打开**：由 host 侧用 `open` 交给系统默认浏览器，不依赖 GUI 自己的 `window.open`。
 
-## API Key 是怎么跨重启保存的（macOS 与 Windows 的关键差异）
+## API Key 存在哪里
 
-官方检索插件 `@wxg-prc-cpg/dsh-weknora` 的 patch 行是这样取配置的：
-
-```yaml
-config:
-  baseUrl: !!js process.env.WEKNORA_BASE_URL ?? 'http://localhost:8080/api/v1'
-  apiKey:  !!js process.env.WEKNORA_API_KEY
-```
-
-所以「保存 Key」等于**让这两个环境变量在下一次 DSH 启动时仍然为真**。
-
-Windows 版用 `setx` 写用户环境变量。**macOS 没有等价物**，而且常见的替代方案都不成立：
-
-| 方案 | 为什么不成立 |
-|---|---|
-| 写 `~/.zshrc` / `~/.zprofile` | 只对交互式 shell 生效。DSH 是 GUI 应用，由 launchd 直接拉起（`PPID 1`），**从不经过 zsh** |
-| 只用 `launchctl setenv` | 确实能让之后启动的进程读到，但命名空间在内存里，**注销或重启就丢** |
-
-本插件的做法是两者结合：**`launchctl setenv` 立即生效** + **一个 `RunAtLoad` LaunchAgent 在每次登录时重新发布**。
+用 **DSH Credentials 服务**（`ctx.credentials`），和官方 `dsh-image-gen` 存各家 Provider Key 是同一个机制：
 
 ```
-~/Library/LaunchAgents/com.dsh.weknora-env.plist
+$DSH_HOME/.credentials.yaml      # 权限 0600
+refs:
+  { WEKNORA_API_KEY: <你的 key> }
 ```
 
-- 值存在 agent 自己的 `EnvironmentVariables` 里（文件权限 `0600`），作业启动时用
-  `launchctl setenv` 把它们复制进全局命名空间。
-- **不修改你的任何 shell 配置文件**，不碰 `.zshrc`。
-- 插件挂载时会读回这个 plist 并重新发布一次（`restorePersistedEnv`），所以从终端启动的 DSH、
-  或者没经过完整注销就重开的 DSH，也不会误报「未配置」。
-- 如果 `launchctl bootstrap` 失败，Key 对当前会话仍然有效，保存结果里 `persisted: false`，
-  卡片会明确告诉你「重启后会失效」，而不是假装成功。
+- 插件只持有**引用**（环境变量名 `WEKNORA_API_KEY`），值由 DSH 自己的 credentials 服务托管。
+- 设置页 / 卡片**不会回显明文**，只显示 `sk-****xxxx`。
+- 不写 `~/.zshrc`、不写 LaunchAgent、不用 `launchctl`、不碰 `process.env`；这些在 macOS 上要么读不到（GUI 启动的 DSH 不 source shell profile），要么随进程消失。
 
-删除保存的 Key：
+命令行清除：
 
 ```sh
-launchctl bootout gui/$(id -u)/com.dsh.weknora-env
-rm ~/Library/LaunchAgents/com.dsh.weknora-env.plist
-launchctl unsetenv WEKNORA_API_KEY WEKNORA_BASE_URL
+# 在 DSH 设置里点「清除」，或直接编辑该文件删掉 WEKNORA_API_KEY 这一行
 ```
+
+**baseUrl 不是密钥**，所以留在插件自己的 Config 里（`cordis.patch.yml` 的 `host` / `port`），不占 credentials 条目。
+
+如果某个组合没有 `credentials` 服务，插件仍会启动服务并返回地址，只是把 Key 报告为未配置——和没有 `webServer` 时卡片不可用是同一种降级。
 
 ## 配置
 
@@ -157,10 +140,11 @@ node scripts/sync-assets.mjs --source /path/to/WeKnora
 | 现象 | 处理 |
 |---|---|
 | 工具报「二进制与资源缺失」 | 包内 `assets/darwin-arm64` 不完整，重新执行 `sync-assets` 后打包 |
+| 保存 Key 报「没有 credentials 服务」 | 该组合未提供 `ctx.credentials`；桌面版与 web profile 都有 |
 | 启动超时 | 看 `$DSH_HOME/weknora/logs/server.log`；首次建库慢属正常，可调大 `startupTimeoutMs` |
 | 端口不是 18080 | 18080 被占用，结果里的 `note` 会写明实际端口 |
 | 页面打不开但工具返回成功 | 确认浏览器访问的是结果里的 `baseUrl`（可能已回退端口） |
-| 重启后提示「未配置 API Key」 | `launchctl print gui/$(id -u)/com.dsh.weknora-env` 看作业是否加载；坏了就删 plist 重新保存一次 |
+| 重启后提示「未配置 API Key」 | 检查 `$DSH_HOME/.credentials.yaml` 里是否还有 `WEKNORA_API_KEY`；没有就重新保存一次 |
 | Gatekeeper 拦截二进制 | 分发的是未签名的 adhoc 二进制；`xattr -d com.apple.quarantine <path>` |
 | 迁移被中断（`dirty database`） | 只可能发生在首启迁移时强杀；删掉 `$DSH_HOME/weknora/data/weknora.db*` 重新建库 |
 

@@ -181,7 +181,7 @@ window.__ModuleLoader__.load({
             setDraft('')
             setEditing(false)
             setStatus({ loading: false, data: body, error: null })
-            setMessage('已保存：' + (body.hint || 'API Key'))
+            setMessage('已保存到 DSH Credentials：' + (body.hint || 'API Key'))
           })
           .catch(function (error) {
             setSaving(false)
@@ -346,7 +346,7 @@ window.__ModuleLoader__.load({
                 },
                 '取消'
               ),
-              h('span', { style: mutedStyle() }, '会写入用户环境变量 WEKNORA_API_KEY 与 WEKNORA_BASE_URL')
+              h('span', { style: mutedStyle() }, '保存到 DSH Credentials，不会写入 shell 配置或环境变量')
             )
           )
         )

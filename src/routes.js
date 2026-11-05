@@ -9,8 +9,9 @@
  * The browser talks to it with `fetch` on the page's own origin, which is how
  * the DSH client half reaches its host without any additional RPC plumbing.
  */
-import { apiBaseUrl, isConfigured, maskKey, saveApiKey, ENV_API_KEY } from './apikey.js'
+import { apiBaseUrl, maskKey, saveApiKey } from './apikey.js'
 import { openExternal } from './browser.js'
+import { clearApiKey, resolveApiKey, storeApiKey } from './credentials.js'
 
 export const API_KEY_ROUTE = '/weknora-run/api-key'
 export const OPEN_ROUTE = '/weknora-run/open'
@@ -63,11 +64,24 @@ function serverAddress(supervisor, config) {
   return { host: config.host, port, baseUrl: apiBaseUrl(config.host, port) }
 }
 
-function currentState(supervisor, config, env) {
+/**
+ * The live credential service.
+ *
+ * Accepts either the service or a getter: `index.js` passes a getter because the
+ * service may be provided after this plugin's fiber starts, and a captured value
+ * would freeze the "no credentials" answer forever.
+ */
+function credentialService(credentials) {
+  return typeof credentials === 'function' ? credentials() : credentials
+}
+
+/** The card's view of the world: address, key state, masked hint. */
+async function currentState(supervisor, config, credentials) {
   const address = serverAddress(supervisor, config)
+  const key = await resolveApiKey(credentialService(credentials))
   return {
-    configured: isConfigured(env),
-    hint: maskKey(env[ENV_API_KEY]),
+    configured: key !== undefined,
+    hint: maskKey(key ?? ''),
     running: supervisor.running,
     baseUrl: supervisor.baseUrl ?? null,
     port: address?.port ?? null,
@@ -81,7 +95,7 @@ function currentState(supervisor, config, env) {
  * web-server service). Every failure is answered as JSON so the card can show
  * the reason instead of a bare 500.
  */
-export function registerApiKeyRoute(ctx, supervisor, { config, env = process.env, persist, fetchImpl, webServer, gate, log = () => {} } = {}) {
+export function registerApiKeyRoute(ctx, supervisor, { config, credentials, fetchImpl, webServer, gate, log = () => {} } = {}) {
   const service = webServer ?? (typeof ctx?.get === 'function' ? ctx.get('webServer') : undefined)
   if (service === undefined || typeof service?.register !== 'function') {
     log('webServer service is unavailable: the card cannot save an API key on this host')
@@ -91,7 +105,7 @@ export function registerApiKeyRoute(ctx, supervisor, { config, env = process.env
   const handler = async (req, res) => {
     try {
       if (req.method === 'GET' || req.method === 'HEAD') {
-        sendJson(res, 200, currentState(supervisor, config, env))
+        sendJson(res, 200, await currentState(supervisor, config, credentials))
         return
       }
       if (req.method !== 'POST') {
@@ -107,17 +121,23 @@ export function registerApiKeyRoute(ctx, supervisor, { config, env = process.env
         sendJson(res, 409, { ok: false, error: 'WeKnora 还没有启动，请先调用一次 weknora_run' })
         return
       }
+      // A DELETE arrives as POST { clear: true }: the same route, one body field.
+      if (body.clear === true) {
+        await clearApiKey(credentialService(credentials))
+        gate?.notify?.()
+        sendJson(res, 200, { ok: true, cleared: true, ...(await currentState(supervisor, config, credentials)) })
+        return
+      }
       const saved = await saveApiKey({
         apiKey: body.apiKey,
         host: address.host,
         port: address.port,
-        env,
-        persist,
+        store: (value) => storeApiKey(credentialService(credentials), value),
         fetchImpl
       })
       // Release a `weknora_run` call that is waiting on this very save.
       gate?.notify?.()
-      sendJson(res, 200, { ...saved, ...currentState(supervisor, config, env) })
+      sendJson(res, 200, { ...saved, ...(await currentState(supervisor, config, credentials)) })
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
     }

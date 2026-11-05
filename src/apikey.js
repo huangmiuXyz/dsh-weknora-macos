@@ -1,33 +1,20 @@
 /**
- * The one API key this plugin owns: validation, in-process activation, and
- * persistence across launches on macOS.
+ * The one API key this plugin owns: validation, then storage.
  *
- * The retrieval side is a separate bundle (`@wxg-prc-cpg/dsh-weknora`) whose
- * patch row resolves its config from `process.env.WEKNORA_API_KEY` and
- * `process.env.WEKNORA_BASE_URL` at load time:
+ * Storage is `ctx.credentials` (see `credentials.js`), the same seam
+ * `dsh-image-gen` uses for every provider key. Nothing is written to
+ * `process.env`, to a shell profile, or to a launchd variable: those are not
+ * stores on macOS — a GUI-launched DSH never sources `.zshrc`, and `process.env`
+ * dies with the process.
  *
- *   apiKey:  !!js process.env.WEKNORA_API_KEY
- *   baseUrl: !!js process.env.WEKNORA_BASE_URL ?? 'http://localhost:8080/api/v1'
- *
- * So "persisting" means making those variables true for the NEXT DSH launch.
- * Windows had `setx` for that. macOS has no per-user variable store that a
- * GUI-launched app inherits: `~/.zshrc` is only sourced by interactive shells,
- * and DSH is started by launchd (PPID 1), never through zsh. Writing there would
- * look like it worked and silently not apply.
- *
- * The one store a launchd-launched app DOES inherit is the `launchd setenv`
- * namespace. It is not persisted across reboots, so this module keeps a small
- * LaunchAgent whose `RunAtLoad` job republishes the variables at every login.
- * That way the key survives a reboot without editing any shell profile, without
- * a plist per variable, and without touching a single existing dotfile.
+ * The base URL is not a secret and stays in the plugin's own Config, so the two
+ * values are no longer forced to travel together through an environment pair.
  */
-import { persistEnvMap } from './persist.js'
 
-/** Environment variable names the retrieval bundle reads by default. */
-export const ENV_API_KEY = 'WEKNORA_API_KEY'
-export const ENV_BASE_URL = 'WEKNORA_BASE_URL'
+/** Where a user can find the key, used in messages the card shows. */
+export const KEY_SETTINGS_HINT = '设置 > 插件 > WeKnora'
 
-/** The REST surface of one WeKnora server: the retrieval bundle expects `/api/v1`. */
+/** The REST surface of one WeKnora server: the API root is `/api/v1`. */
 export function apiBaseUrl(host, port) {
   return `http://${host}:${port}/api/v1`
 }
@@ -40,18 +27,13 @@ export function maskKey(key) {
   return `${trimmed.slice(0, 3)}****${trimmed.slice(-4)}`
 }
 
-/** Whether a key is configured for this process right now. */
-export function isConfigured(env = process.env) {
-  return typeof env[ENV_API_KEY] === 'string' && env[ENV_API_KEY].trim() !== ''
-}
-
 /**
- * Prove the key works before persisting it.
+ * Prove the key works before storing it.
  *
  * A key that fails here would leave the user with a "saved" state that never
- * retrieves anything, so the validation request is the price of the button
- * doing something real. `knowledge-bases` needs the `retrieve` capability and
- * answers 200 for any usable key; an empty list is still a success.
+ * retrieves anything, so the validation request is the price of the button doing
+ * something real. `knowledge-bases` needs the `retrieve` capability and answers
+ * 200 for any usable key; an empty list is still a success.
  */
 export async function validateApiKey({ apiKey, baseUrl, fetchImpl = globalThis.fetch, timeoutMs = 8_000 }) {
   if (typeof fetchImpl !== 'function') throw new Error('当前环境没有 fetch，无法校验 API Key')
@@ -79,31 +61,14 @@ export async function validateApiKey({ apiKey, baseUrl, fetchImpl = globalThis.f
   throw new Error(`校验 API Key 失败（HTTP ${response.status}）${detail}`)
 }
 
-/** Save one variable on its own; `saveApiKey` stores both together. */
-export async function persistEnv(name, value) {
-  return persistEnvMap({ [name]: value })
-}
-
 /**
- * Save a validated key for this process and the next launch.
+ * Validate a key and store it in the credential seam.
  *
- * `env` and `persist` are injectable so the unit test never touches the real
- * user environment. Both variables are written together: a key without the
- * matching base URL would make the retrieval bundle talk to port 18080 while
- * this plugin serves a fallback one, or vice versa.
- *
- * `persist` receives the whole map in one call because the macOS store is a
- * single LaunchAgent: writing the two variables separately would mean two
- * bootstraps of the same job.
+ * `store` is injectable so the unit test never touches the real credential file.
+ * Validation runs first: storing a key that does not work would make the card
+ * claim a configuration that retrieves nothing.
  */
-export async function saveApiKey({
-  apiKey,
-  host,
-  port,
-  env = process.env,
-  persist = persistEnvMap,
-  fetchImpl = globalThis.fetch
-}) {
+export async function saveApiKey({ apiKey, host, port, store, fetchImpl = globalThis.fetch }) {
   const key = String(apiKey ?? '').trim()
   if (key === '') throw new Error('请先填写 API Key')
   if (key.length < 8) throw new Error('API Key 太短，请检查是否复制完整')
@@ -111,18 +76,7 @@ export async function saveApiKey({
 
   const baseUrl = apiBaseUrl(host, port)
   await validateApiKey({ apiKey: key, baseUrl, fetchImpl })
+  await store(key)
 
-  env[ENV_API_KEY] = key
-  env[ENV_BASE_URL] = baseUrl
-  const stored = await persist({ [ENV_API_KEY]: key, [ENV_BASE_URL]: baseUrl })
-
-  return {
-    ok: true,
-    configured: true,
-    hint: maskKey(key),
-    baseUrl,
-    // False means the key works now but a reboot will forget it; the card says so
-    // instead of letting the user discover it at the next launch.
-    persisted: stored?.bootstrapped !== false
-  }
+  return { ok: true, configured: true, hint: maskKey(key), baseUrl }
 }

@@ -6,7 +6,8 @@
  * edits once, not in a call the model has to compose correctly every time.
  */
 import { KEY_WAIT_MS, TOOL_NAME } from './protocol.js'
-import { ENV_API_KEY, isConfigured, maskKey } from './apikey.js'
+import { maskKey } from './apikey.js'
+import { resolveApiKey } from './credentials.js'
 
 /**
  * Model-facing description.
@@ -76,7 +77,7 @@ function renderText(value) {
   return [{ type: 'text', text: lines.join('\n') }]
 }
 
-export function weknoraRunTool(supervisor, { gate, keyWaitMs = KEY_WAIT_MS } = {}) {
+export function weknoraRunTool(supervisor, { gate, credentials, keyWaitMs = KEY_WAIT_MS } = {}) {
   return {
     name: TOOL_NAME,
     description: DESCRIPTION,
@@ -97,12 +98,14 @@ export function weknoraRunTool(supervisor, { gate, keyWaitMs = KEY_WAIT_MS } = {
       // typing, and the model would move on without retrieval. `gate` releases on
       // a saved key; timeout and cancellation both end the wait quietly.
       let waited = false
-      if (!isConfigured() && gate !== undefined) {
+      if ((await resolveApiKey(credentials)) === undefined && gate !== undefined) {
         waited = true
         await gate.wait({ timeoutMs: keyWaitMs, signal: exec?.signal })
       }
 
-      const configured = isConfigured()
+      // Re-read after the wait: the card may have just stored a key.
+      const key = await resolveApiKey(credentials)
+      const configured = key !== undefined
       let note = value.note
       if (waited && !configured) {
         note = [note, `等待 API Key 超时（${Math.round(keyWaitMs / 1000)} 秒）。`].filter(Boolean).join('；')
@@ -111,7 +114,7 @@ export function weknoraRunTool(supervisor, { gate, keyWaitMs = KEY_WAIT_MS } = {
       const output = {
         ...value,
         apiKeyConfigured: configured,
-        apiKeyHint: maskKey(process.env[ENV_API_KEY])
+        apiKeyHint: maskKey(key ?? '')
       }
       // A missing note must stay absent: an explicit `undefined` is not
       // lossless JSON, and the tool runner rejects the whole result for it.
