@@ -26,6 +26,7 @@ import {
   copyTreeChanged,
   copyTreeMissing,
   ensureEnvFile,
+  ensureExecutable,
   ensureRuntime,
   envFileText,
   freePort,
@@ -491,5 +492,31 @@ test('launchAgentPath lives under the user LaunchAgents directory', () => {
   assert.equal(
     launchAgentPath('/Users/x'),
     `/Users/x/Library/LaunchAgents/${LAUNCH_AGENT_LABEL}.plist`
+  )
+})
+
+// --- exec bit ----------------------------------------------------------------
+
+test('ensureExecutable restores the mode bit a tarball install strips', async () => {
+  const dir = await tempDir('weknora-exec-')
+  const exe = path.join(dir, 'WeKnora-lite')
+  await fsp.writeFile(exe, '#!/bin/sh\nexit 0\n')
+  // What pnpm/npm leave behind: 0644, no exec bit for anyone.
+  await fsp.chmod(exe, 0o644)
+
+  const first = await ensureExecutable(exe)
+  assert.equal(first.changed, true, 'a 0644 binary is repaired')
+  assert.ok(((await fsp.stat(exe)).mode & 0o111) !== 0, 'it is executable afterwards')
+
+  const second = await ensureExecutable(exe)
+  assert.equal(second.changed, false, 'a second call is a no-op')
+
+  await fsp.rm(dir, { recursive: true, force: true })
+})
+
+test('ensureExecutable reports an unreadable path instead of a bare EACCES', async () => {
+  await assert.rejects(
+    () => ensureExecutable('/nonexistent/WeKnora-lite'),
+    /无法为 .* 添加执行权限/u
   )
 })

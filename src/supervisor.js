@@ -24,6 +24,7 @@ import path from 'node:path'
 import { KILL_GRACE_MS, LOG_RING_LINES, LOG_TAIL_LINES, PROBE_TIMEOUT_MS, READY_POLL_MS } from './protocol.js'
 import {
   assetPaths,
+  ensureExecutable,
   ensureRuntime,
   freePort,
   isPortFree,
@@ -120,6 +121,11 @@ export class WeknoraSupervisor {
         `WeKnora 二进制与资源缺失（平台 ${process.platform}-${process.arch}）：\n${missing.join('\n')}`
       )
     }
+
+    // A tarball-installed binary arrives without its exec bit; repair it before
+    // handing the path to the spawner, or the failure is a bare EACCES.
+    const fixed = await ensureExecutable(this.assets.exe)
+    if (fixed.changed) this.log(`restored the exec bit on ${this.assets.exe}`)
 
     const runtime = await ensureRuntime({
       home: this.home,

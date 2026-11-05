@@ -86,6 +86,35 @@ export function missingAssets(paths) {
   return missing
 }
 
+/**
+ * Make the bundled executable actually executable.
+ *
+ * macOS has no equivalent of the `.exe` extension telling the loader "this is a
+ * program": the mode bits are the only signal, and both `pnpm pack` and `npm
+ * install` normalise a tarball entry to 0644 (the tar header records the owner as
+ * root:root too). A binary installed that way fails with `EACCES` on spawn — a
+ * failure Windows never sees, which is why the original had no such step.
+ *
+ * The package is read-only by design (`node_modules` is a pnpm content store), so
+ * this only ever repairs the one mode bit and reports whether it had to. A read
+ * -only store makes chmod fail; the caller turns that into an actionable message
+ * instead of a bare EACCES at spawn time.
+ */
+export async function ensureExecutable(exe) {
+  try {
+    const stat = await fsp.stat(exe)
+    const wanted = stat.mode | 0o111
+    if (stat.mode === wanted) return { changed: false, mode: stat.mode }
+    await fsp.chmod(exe, wanted)
+    return { changed: true, mode: wanted }
+  } catch (error) {
+    throw new Error(
+      `无法为 ${exe} 添加执行权限：${String(error?.message ?? error)}。` +
+        '如果插件装在只读位置，请手动执行 chmod +x。'
+    )
+  }
+}
+
 /** Forward slashes, because the generated dotenv is read by a Go program on Windows. */
 export function toPosix(value) {
   return String(value).split('\\').join('/')
