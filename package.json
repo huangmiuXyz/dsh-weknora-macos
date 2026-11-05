@@ -1,0 +1,48 @@
+{
+  "name": "dsh-weknora-macos",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Bundles the WeKnora-lite macOS (Apple Silicon) server into a DSH plugin and injects one tool, weknora_run, which starts it on demand and returns its local web address. · 把 WeKnora-lite（macOS arm64）二进制打包进 DSH 插件，安装后自动注入 weknora_run 工具：按需启动本机知识库服务并返回地址。",
+  "license": "MIT",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./client/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "client",
+    "assets",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "scripts": {
+    "sync-assets": "node scripts/sync-assets.mjs",
+    "test": "node test/check.mjs",
+    "test:e2e": "node test/check.mjs --e2e"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-tool"
+      ],
+      "platform": "web"
+    }
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ]
+}

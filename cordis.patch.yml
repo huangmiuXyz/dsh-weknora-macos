@@ -1,0 +1,27 @@
+# dsh bundle patch: inserts this plugin into a profile's layer stack.
+#
+# The config below is the plugin's *default* Config. A user who changes something
+# from the settings page (or by editing the profile's cordis.patch.yml) overrides
+# this row, so their edits survive an upgrade of this package.
+- insert:
+    # A row id must not collide with another bundle's row: `insert` skips an id
+    # that already exists, so the plugin would load as its namesake instead. The
+    # WeKnora project also publishes a `weknora` row (retrieval tools), and those
+    # two coexist by keeping this one distinct.
+    - id: weknora-run
+      name: 'dsh-weknora-macos'
+      config:
+        # Loopback only: the bundled server has no authentication on first boot
+        # beyond WeKnora's own registration flow, so it must never be exposed.
+        host: '127.0.0.1'
+        # 0 asks the OS for a free port on every run; a fixed port keeps the URL
+        # bookmarkable. A busy fixed port falls back to a free one.
+        port: 18080
+        # Empty keeps everything under $DSH_HOME/weknora.
+        dataDir: ''
+        # First boot creates and migrates the SQLite database, which is slower.
+        startupTimeoutMs: 120000
+        # The server belongs to this plugin: unload the plugin, stop the server.
+        stopOnDispose: true
+        # Extra environment entries for the child (e.g. OLLAMA_BASE_URL).
+        extraEnv: {}

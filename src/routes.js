@@ -1,0 +1,179 @@
+/**
+ * The card's host side: one same-origin route the tool view calls.
+ *
+ * `GET`  → what the card should show (running, address, key state, masked hint)
+ * `POST` → validate and save one API key, then report the new state
+ *
+ * The route is registered through the host's web-server service; a composition
+ * without that service keeps the tool working and simply has no card backend.
+ * The browser talks to it with `fetch` on the page's own origin, which is how
+ * the DSH client half reaches its host without any additional RPC plumbing.
+ */
+import { apiBaseUrl, isConfigured, maskKey, saveApiKey, ENV_API_KEY } from './apikey.js'
+import { openExternal } from './browser.js'
+
+export const API_KEY_ROUTE = '/weknora-run/api-key'
+export const OPEN_ROUTE = '/weknora-run/open'
+
+/** Bodies are two small JSON objects; anything larger is a mistake. */
+const MAX_BODY_BYTES = 16_384
+
+function sendJson(res, status, body) {
+  const text = JSON.stringify(body)
+  res.statusCode = status
+  res.setHeader('content-type', 'application/json; charset=utf-8')
+  res.setHeader('cache-control', 'no-store')
+  res.end(text)
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let size = 0
+    const chunks = []
+    req.on('data', (chunk) => {
+      size += chunk.length
+      if (size > MAX_BODY_BYTES) {
+        reject(new Error('请求体过大'))
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => {
+      const text = Buffer.concat(chunks).toString('utf8')
+      if (text.trim() === '') {
+        resolve({})
+        return
+      }
+      try {
+        const value = JSON.parse(text)
+        resolve(value !== null && typeof value === 'object' ? value : {})
+      } catch {
+        reject(new Error('请求体不是合法 JSON'))
+      }
+    })
+    req.on('error', reject)
+  })
+}
+
+/** The address this plugin's server answers on, or null before a first start. */
+function serverAddress(supervisor, config) {
+  const port = supervisor.port ?? (config.port > 0 ? config.port : undefined)
+  if (typeof port !== 'number' || port <= 0) return null
+  return { host: config.host, port, baseUrl: apiBaseUrl(config.host, port) }
+}
+
+function currentState(supervisor, config, env) {
+  const address = serverAddress(supervisor, config)
+  return {
+    configured: isConfigured(env),
+    hint: maskKey(env[ENV_API_KEY]),
+    running: supervisor.running,
+    baseUrl: supervisor.baseUrl ?? null,
+    port: address?.port ?? null,
+    host: config.host,
+    apiBaseUrl: address?.baseUrl ?? null
+  }
+}
+
+/**
+ * Register `API_KEY_ROUTE`; returns a disposer (a no-op when the host has no
+ * web-server service). Every failure is answered as JSON so the card can show
+ * the reason instead of a bare 500.
+ */
+export function registerApiKeyRoute(ctx, supervisor, { config, env = process.env, persist, fetchImpl, webServer, gate, log = () => {} } = {}) {
+  const service = webServer ?? (typeof ctx?.get === 'function' ? ctx.get('webServer') : undefined)
+  if (service === undefined || typeof service?.register !== 'function') {
+    log('webServer service is unavailable: the card cannot save an API key on this host')
+    return () => {}
+  }
+
+  const handler = async (req, res) => {
+    try {
+      if (req.method === 'GET' || req.method === 'HEAD') {
+        sendJson(res, 200, currentState(supervisor, config, env))
+        return
+      }
+      if (req.method !== 'POST') {
+        res.statusCode = 405
+        res.setHeader('allow', 'GET, POST')
+        res.end()
+        return
+      }
+
+      const body = await readJsonBody(req)
+      const address = serverAddress(supervisor, config)
+      if (address === null) {
+        sendJson(res, 409, { ok: false, error: 'WeKnora 还没有启动，请先调用一次 weknora_run' })
+        return
+      }
+      const saved = await saveApiKey({
+        apiKey: body.apiKey,
+        host: address.host,
+        port: address.port,
+        env,
+        persist,
+        fetchImpl
+      })
+      // Release a `weknora_run` call that is waiting on this very save.
+      gate?.notify?.()
+      sendJson(res, 200, { ...saved, ...currentState(supervisor, config, env) })
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
+    }
+  }
+
+  const dispose = service.register({ kind: 'exact', path: API_KEY_ROUTE, handler })
+  return () => {
+    try {
+      if (typeof dispose === 'function') dispose()
+    } catch {
+      /* the host tears its own routes down */
+    }
+  }
+}
+
+/**
+ * `POST OPEN_ROUTE` — hand the running server's address to the default browser.
+ *
+ * The client cannot do this itself (an in-shell `window.open` opens the app's
+ * own window, or is blocked), and the address is this supervisor's, never the
+ * request body's, so the route cannot be turned into an open-anything endpoint.
+ */
+export function registerBrowserRoute(ctx, supervisor, { config, webServer, log = () => {} } = {}) {
+  const service = webServer ?? (typeof ctx?.get === 'function' ? ctx.get('webServer') : undefined)
+  if (service === undefined || typeof service?.register !== 'function') {
+    log('webServer service is unavailable: the card cannot open a browser on this host')
+    return () => {}
+  }
+
+  const handler = async (req, res) => {
+    try {
+      if (req.method !== 'POST') {
+        res.statusCode = 405
+        res.setHeader('allow', 'POST')
+        res.end()
+        return
+      }
+      const address = serverAddress(supervisor, config)
+      const url = supervisor.baseUrl ?? (address === null ? null : `http://${address.host}:${address.port}/`)
+      if (supervisor.running !== true || url === null) {
+        sendJson(res, 409, { ok: false, error: 'WeKnora 还没有启动，请先调用一次 weknora_run' })
+        return
+      }
+      await openExternal(url)
+      sendJson(res, 200, { ok: true, url })
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: String(error?.message ?? error) })
+    }
+  }
+
+  const dispose = service.register({ kind: 'exact', path: OPEN_ROUTE, handler })
+  return () => {
+    try {
+      if (typeof dispose === 'function') dispose()
+    } catch {
+      /* the host tears its own routes down */
+    }
+  }
+}

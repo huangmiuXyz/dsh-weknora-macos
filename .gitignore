@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Packed release artifact (`pnpm pack`); attached to GitHub Releases instead.
+*.tgz
+
+# Everything extracted from WeKnora (binary, web/, config/, migrations/,
+# licenses/) is a distribution artifact, not source. Regenerate it with
+# `node scripts/sync-assets.mjs --source <WeKnora checkout>`.
+assets/
+
+# Local scratch
+*.log
+.DS_Store
