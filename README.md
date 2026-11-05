@@ -17,18 +17,18 @@
 ## 安装
 
 从 [Releases](https://github.com/huangmiuXyz/dsh-weknora-macos/releases) 下载
-`dsh-weknora-macos-0.1.0.tgz`：
+`dsh-weknora-macos-0.1.1.tgz`：
 
 ```sh
-dsh plugin --profile <name> add ./dsh-weknora-macos-0.1.0.tgz
+dsh plugin --profile <name> add ./dsh-weknora-macos-0.1.1.tgz
 dsh --profile <name>             # 或重启 DSH
 ```
 
 或者本地打包（先补齐 `assets/`，见下节）：
 
 ```sh
-pnpm pack                        # 产出 dsh-weknora-macos-0.1.0.tgz（约 270 MB）
-dsh plugin --profile <name> add ./dsh-weknora-macos-0.1.0.tgz
+pnpm pack                        # 产出 dsh-weknora-macos-0.1.1.tgz（约 270 MB）
+dsh plugin --profile <name> add ./dsh-weknora-macos-0.1.1.tgz
 ```
 
 安装后工具列表里会出现 `weknora_run`。第一次调用会建库并跑迁移（通常几秒），之后
