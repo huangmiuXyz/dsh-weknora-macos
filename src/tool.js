@@ -58,7 +58,23 @@ const OUTPUT_SCHEMA = {
     apiKeyHint: {
       type: 'string',
       description: 'Masked form of the configured key (`sk-****3f2a`); empty when none is configured.'
+    },
+    tools: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        'The tools this call just registered. Before it runs, only weknora_run exists; after a successful call the ' +
+        'retrieval and API tools are available for the next request.'
     }
+  }
+}
+
+/** Plugin log line; a closed stdout must not fail a tool call. */
+function hostLog(message) {
+  try {
+    console.log(`[dsh-weknora-macos] ${message}`)
+  } catch {
+    /* nothing to do */
   }
 }
 
@@ -74,10 +90,13 @@ function renderText(value) {
   if (typeof value.note === 'string' && value.note !== '') lines.push(value.note)
   if (value.state === 'started') lines.push('首次打开页面需要注册一个本地账号。')
   if (value.apiKeyConfigured === false) lines.push('尚未配置 API Key：在工具卡片里填写后可用于知识库检索。')
+  if (Array.isArray(value.tools) && value.tools.length > 0) {
+    lines.push(`检索工具：${value.tools.join(', ')}`)
+  }
   return [{ type: 'text', text: lines.join('\n') }]
 }
 
-export function weknoraRunTool(supervisor, { gate, credentials, keyWaitMs = KEY_WAIT_MS } = {}) {
+export function weknoraRunTool(supervisor, { gate, credentials, keyWaitMs = KEY_WAIT_MS, onReady } = {}) {
   return {
     name: TOOL_NAME,
     description: DESCRIPTION,
@@ -114,11 +133,27 @@ export function weknoraRunTool(supervisor, { gate, credentials, keyWaitMs = KEY_
       const output = {
         ...value,
         apiKeyConfigured: configured,
-        apiKeyHint: maskKey(key ?? '')
+        apiKeyHint: maskKey(key ?? ''),
+        // Reported so the model learns what it just gained: the names exist only
+        // after this call, which is otherwise impossible to discover.
+        tools: []
       }
       // A missing note must stay absent: an explicit `undefined` is not
       // lossless JSON, and the tool runner rejects the whole result for it.
       if (typeof note === 'string' && note !== '') output.note = note
+
+      // The server answers, so the tools that depend on it can exist. This runs
+      // on every state (started, already-running, adopted) and is idempotent; a
+      // failed reveal must not turn "the server is up" into an error, because the
+      // address is still the answer to this call.
+      if (typeof onReady === 'function') {
+        try {
+          const names = onReady()
+          if (Array.isArray(names)) output.tools = names
+        } catch (error) {
+          hostLog(`注册检索工具失败：${String(error?.message ?? error)}`)
+        }
+      }
       return output
     }
   }

@@ -1,0 +1,202 @@
+以下是deepseekharness开发的文档：https://deepseek-harness.github.io/deepseek-harness/llms.txt，遵循文档进行开发除非万不得已禁止查看deepseekharness的源码。
+# DeepSeek Harness
+
+> 用于构建 Agent Harness 的插件化 SDK
+
+页面 URL 去掉斜杠加上 `.md` 即为该页面原始 Markdown(根路径用 `/index.md`)；下方列表是各页准确地址。删除任何尾部斜杠并将 `.md` 附加到页面 URL 中以获得其原始 Markdown（站点根目录是 `/index.md`）；下面的列表包含确切的地址。
+
+## 简体中文
+
+- [使用 Web UI](/deepseek-harness/guide/quickstart.md): 入门
+- [配置模型](/deepseek-harness/guide/providers.md): 入门
+- [网络代理](/deepseek-harness/guide/network-proxy.md): 入门
+- [公开部署](/deepseek-harness/guide/public-deployments.md): 入门
+- [Python](/deepseek-harness/guide/python-sdk.md): SDK
+- [GitHub 评审会话](/deepseek-harness/guide/github-review.md): 自动化
+- [会话内提醒](/deepseek-harness/guide/schedule.md): 自动化
+- [记忆MCP](/deepseek-harness/guide/mcp-memory.md): 集成
+- [插件市场](/deepseek-harness/guide/plugin-market.md): 集成
+- [第一个 Harness 插件](/deepseek-harness/develop/basic/index.md): 基础
+- [开发一个工具](/deepseek-harness/develop/basic/tool.md): 基础
+- [插件配置](/deepseek-harness/develop/basic/config.md): 基础
+- [压缩与安装插件](/deepseek-harness/develop/basic/publish.md): 基础
+- [插件与生命周期](/deepseek-harness/develop/framework/index.md): 框架能力
+- [服务与依赖](/deepseek-harness/develop/framework/service.md): 框架能力
+- [事件系统](/deepseek-harness/develop/framework/events.md): 框架能力
+- [能力的三层分割](/deepseek-harness/develop/practice/index.md): 实战
+- [LLM 幼儿](/deepseek-harness/develop/practice/llm-adapter.md): 实战
+- [持久化 Harness 插件](/deepseek-harness/develop/practice/dynamic-cordis.md): 实战
+- [总览](/deepseek-harness/develop/cordis-tutorial/index.md): Cordis 框架教程
+- [1. 第一个插件](/deepseek-harness/develop/cordis-tutorial/01-first-plugin.md): Cordis 框架教程
+- [2. 生命周期与副作用](/deepseek-harness/develop/cordis-tutorial/02-lifecycle-and-effects.md)：Cordis 框架教程
+- [3. 服务](/deepseek-harness/develop/cordis-tutorial/03-services.md)：Cordis 框架教程
+- [4. 事件](/deepseek-harness/develop/cordis-tutorial/04-events.md): Cordis 框架教程
+- [5. 配置](/deepseek-harness/develop/cordis-tutorial/05-config.md)：Cordis 框架教程
+- [6. 组合与热重载](/deepseek-harness/develop/cordis-tutorial/06-composition-and-hmr.md)：Cordis 框架教程
+- [7. 进入 Harness](/deepseek-harness/develop/cordis-tutorial/07-into-the-harness.md)：Cordis 框架教程
+- [架构](/deepseek-harness/reference/index.md): 概念
+- [Cordis 入门](/deepseek-harness/reference/cordis-primer.md): 概念
+- [能力服务](/deepseek-harness/reference/capability-seams.md)：概念
+- [Agent 生命周期](/deepseek-harness/reference/agent-lifecycle.md): 概念
+- [工具执行](/deepseek-harness/reference/tool-execution-pipeline.md): 概念
+- [API 网关](/deepseek-harness/reference/api-gateway.md): 概念
+- [插件配置](/deepseek-harness/reference/config-catalog.md): 生成参考
+- [工具架构](/deepseek-harness/reference/tool-catalog.md): 生成参考
+- [持久化事件](/deepseek-harness/reference/persistence-catalog.md): 生成参考
+- [实验性持久化记录](/deepseek-harness/reference/experimental-persistence-catalog.md): 生成参考
+- [上下文](/deepseek-harness/reference/cordis-api/context.md): Cordis API
+- [事件](/deepseek-harness/reference/cordis-api/events.md): Cordis API
+- [Fiber](/deepseek-harness/reference/cordis-api/fiber.md): Cordis API
+- [插件注册表](/deepseek-harness/reference/cordis-api/registry.md): Cordis API
+- [服务](/deepseek-harness/reference/cordis-api/service.md): Cordis API
+- [继承接口面](/deepseek-harness/reference/cordis-api/inherited.md): Cordis API
+- [新增包](/deepseek-harness/reference/cookbook/adding-a-package.md): 开发手册
+- [新增工具](/deepseek-harness/reference/cookbook/adding-a-tool.md): 开发手册
+- [新增LLM适配器](/deepseek-harness/reference/cookbook/adding-an-llm-adapter.md): 开发手册
+- [新增设置页面](/deepseek-harness/reference/cookbook/adding-a-settings-card.md): 开发手册
+- [扩展模式](/deepseek-harness/reference/cookbook/extension-cookbook.md): 开发手册
+- [子系统](/deepseek-harness/reference/subsystems/index.md): 总览
+- [核心](/deepseek-harness/reference/subsystems/core.md): 内核与作用域
+- [作用域](/deepseek-harness/reference/subsystems/scope.md): 内核与作用域
+- [会话](/deepseek-harness/reference/subsystems/session.md): 会话与持久化
+- [会话查询](/deepseek-harness/reference/subsystems/session-query.md): 会话与持久化
+- [会话引用](/deepseek-harness/reference/subsystems/session-reference.md): 会话与持久化
+- [会话标题](/deepseek-harness/reference/subsystems/session-title.md): 会话与持久化
+- [会话投影](/deepseek-harness/reference/subsystems/session-projection.md): 会话与持久化
+- [会话持久化](/deepseek-harness/reference/subsystems/persistence.md): 会话与持久化
+- [Spill 存储](/deepseek-harness/reference/subsystems/spill.md): 会话与持久化
+- [遥测](/deepseek-harness/reference/subsystems/session-telemetry.md): 会话与持久化
+- [LLM 流式响应](/deepseek-harness/reference/subsystems/llm-streaming.md): 模型与上下文
+- [Token计量](/deepseek-harness/reference/subsystems/token-meter.md): 模型与上下文
+- [系统提示词](/deepseek-harness/reference/subsystems/system-prompt.md): 模型与上下文
+- [上下文压缩](/deepseek-harness/reference/subsystems/compaction.md): 模型与上下文
+- [工具](/deepseek-harness/reference/subsystems/tools.md): 执行与工具
+- [Bash 执行](/deepseek-harness/reference/subsystems/shell.md): 执行与工具
+- [子进程](/deepseek-harness/reference/subsystems/subprocess.md): 执行与工具
+- [PTY 会话](/deepseek-harness/reference/subsystems/terminal.md): 执行与工具
+- [后台任务](/deepseek-harness/reference/subsystems/jobs.md): 执行与工具
+- [文件系统](/deepseek-harness/reference/subsystems/filesystem.md): 执行与工具
+- [LSP 导航](/deepseek-harness/reference/subsystems/lsp.md): 执行与工具
+- [PTC 运行时](/deepseek-harness/reference/subsystems/ptc-runtime.md): 执行与工具
+- [Web 访问](/deepseek-harness/reference/subsystems/web.md): 执行与工具
+- [技能](/deepseek-harness/reference/subsystems/skills.md): 执行与工具
+- [工作流](/deepseek-harness/reference/subsystems/workflow.md): 执行与工具
+- [子智能体](/deepseek-harness/reference/subsystems/subagent.md): 执行与工具
+- [解读](/deepseek-harness/reference/subsystems/approval.md): 策略与交互
+- [权限默认](/deepseek-harness/reference/subsystems/permission-presets.md): 策略与交互
+- [沙箱](/deepseek-harness/reference/subsystems/sandbox.md): 策略与交互
+- [计划模式](/deepseek-harness/reference/subsystems/plan.md): 策略与交互
+- [用户交互](/deepseek-harness/reference/subsystems/user-questions.md): 策略与交互
+- [命令](/deepseek-harness/reference/subsystems/commands.md): 策略与交互
+- [目标](/deepseek-harness/reference/subsystems/goal.md): 策略与交互
+- [定时提醒](/deepseek-harness/reference/subsystems/schedule.md): 策略与交易
+- [HTTP 服务器](/deepseek-harness/reference/subsystems/web-server.md): 平台与接入点
+- [Web 客户端架构](/deepseek-harness/reference/subsystems/web-client.md): 平台与接入点
+- [客户端模块](/deepseek-harness/reference/subsystems/client-modules.md): 平台与接入点
+- [客户端插槽](/deepseek-harness/reference/subsystems/slots.md): 平台与接入点
+- [客户端资源](/deepseek-harness/reference/subsystems/client-resources.md): 平台与接入点
+- [右侧侧边栏](/deepseek-harness/reference/subsystems/sidebar-right.md): 平台与接入点
+- [Conversation 协作](/deepseek-harness/reference/subsystems/conversation.md): 平台与接入
+- [Typert](/deepseek-harness/reference/subsystems/typert.md): 平台与接入点
+- [存储](/deepseek-harness/reference/subsystems/storage.md): 平台与接入点
+- [工作区](/deepseek-harness/reference/subsystems/workspace.md): 平台与接入点
+- [用户设置](/deepseek-harness/reference/subsystems/settings.md): 平台与接入点
+- [用户凭据](/deepseek-harness/reference/subsystems/credentials.md): 平台与接入点
+
+＃＃ 英语
+
+- [使用 Web 用户界面](/deepseek-harness/en/guide/quickstart.md): 指南
+- [配置模型](/deepseek-harness/en/guide/providers.md): 指南
+- [网络代理](/deepseek-harness/en/guide/network-proxy.md): 指南
+- [公共部署](/deepseek-harness/en/guide/public-deployments.md): 指南
+- [Python](/deepseek-harness/en/guide/python-sdk.md): SDK
+- [GitHub 评审会议](/deepseek-harness/en/guide/github-review.md): 自动化
+- [会话提醒](/deepseek-harness/en/guide/schedule.md): 自动化
+- [内存 MCP](/deepseek-harness/en/guide/mcp-memory.md): 集成
+- [插件市场](/deepseek-harness/en/guide/plugin-market.md): 集成
+- [您的第一个 Harness 插件](/deepseek-harness/en/develop/basic/index.md): 基础知识
+- [构建工具](/deepseek-harness/en/develop/basic/tool.md): 基础知识
+- [插件配置](/deepseek-harness/en/develop/basic/config.md): 基本信息
+- [打包和安装](/deepseek-harness/en/develop/basic/publish.md): 基础知识
+- [插件生命周期](/deepseek-harness/en/develop/framework/index.md): 框架
+- [服务和依赖项](/deepseek-harness/en/develop/framework/service.md): 框架
+- [事件系统](/deepseek-harness/en/develop/framework/events.md): 框架
+- [能力分层](/deepseek-harness/en/develop/practice/index.md): 实践
+- [LLM适配器](/deepseek-harness/en/develop/practice/llm-adapter.md): 实践
+- [持久化 Harness 插件](/deepseek-harness/en/develop/practice/dynamic-cordis.md): 实践
+- [概述](/deepseek-harness/en/develop/cordis-tutorial/index.md): Cordis 框架教程
+- [1. 你的第一个插件](/deepseek-harness/en/develop/cordis-tutorial/01-first-plugin.md): Cordis 框架教程
+- [2. 生命周期和效果](/deepseek-harness/en/develop/cordis-tutorial/02-lifecycle-and-effects.md): Cordis 框架教程
+- [3. 服务](/deepseek-harness/en/develop/cordis-tutorial/03-services.md): Cordis 框架教程
+- [4. 事件](/deepseek-harness/en/develop/cordis-tutorial/04-events.md): Cordis 框架教程
+- [5. 配置](/deepseek-harness/en/develop/cordis-tutorial/05-config.md): Cordis 框架教程
+- [6. 组合和 HMR](/deepseek-harness/en/develop/cordis-tutorial/06-composition-and-hmr.md): Cordis 框架教程
+- [7. 进入 Cordis 框架](/deepseek-harness/en/develop/cordis-tutorial/07-into-the-harness.md): Cordis 框架教程
+- [架构](/deepseek-harness/en/reference/index.md): 概念
+- [Cordis入门指南](/deepseek-harness/en/reference/cordis-primer.md): 概念
+- [能力服务](/deepseek-harness/en/reference/capability-seams.md): 概念
+- [代理生命周期](/deepseek-harness/en/reference/agent-lifecycle.md): 概念
+- [工具执行](/deepseek-harness/en/reference/tool-execution-pipeline.md): 概念
+- [API 网关](/deepseek-harness/en/reference/api-gateway.md): 概念
+- [插件配置](/deepseek-harness/en/reference/config-catalog.md): 生成的引用
+- [工具架构](/deepseek-harness/en/reference/tool-catalog.md): 生成的参考
+- [持久化事件](/deepseek-harness/en/reference/persistence-catalog.md): 生成引用
+- [实验性持久化](/deepseek-harness/en/reference/experimental-persistence-catalog.md): 生成的引用
+- [上下文](/deepseek-harness/en/reference/cordis-api/context.md): Cordis Core API
+- [事件](/deepseek-harness/en/reference/cordis-api/events.md): Cordis Core API
+- [Fiber](/deepseek-harness/en/reference/cordis-api/fiber.md): Cordis Core API
+- [插件注册表](/deepseek-harness/en/reference/cordis-api/registry.md): Cordis Core API
+- [服务](/deepseek-harness/en/reference/cordis-api/service.md): Cordis Core API
+- [继承的表面](/deepseek-harness/en/reference/cordis-api/inherited.md): Cordis Core API
+- [添加软件包](/deepseek-harness/en/reference/cookbook/adding-a-package.md): Cookbook
+- [添加工具](/deepseek-harness/en/reference/cookbook/adding-a-tool.md): Cookbook
+- [添加 LLM 适配器](/deepseek-harness/en/reference/cookbook/adding-an-llm-adapter.md): Cookbook
+- [添加设置页面](/deepseek-harness/en/reference/cookbook/adding-a-settings-card.md): Cookbook
+- [扩展模式](/deepseek-harness/en/reference/cookbook/extension-cookbook.md): Cookbook
+- [子系统](/deepseek-harness/en/reference/subsystems/index.md): 概述
+- [核心](/deepseek-harness/en/reference/subsystems/core.md): 核心和作用域
+- [作用域](/deepseek-harness/en/reference/subsystems/scope.md): 核心和作用域
+- [会话](/deepseek-harness/en/reference/subsystems/session.md): 会话和持久性
+- [会话查询](/deepseek-harness/en/reference/subsystems/session-query.md): 会话和持久性
+- [会话引用](/deepseek-harness/en/reference/subsystems/session-reference.md): 会话和持久性
+- [会话标题](/deepseek-harness/en/reference/subsystems/session-title.md): 会话和持久性
+- [会话投影](/deepseek-harness/en/reference/subsystems/session-projection.md): 会话和持久性
+- [会话持久性](/deepseek-harness/en/reference/subsystems/persistence.md): 会话和持久性
+- [溢出存储](/deepseek-harness/en/reference/subsystems/spill.md): 会话和持久性
+- [SessionTelemetryBackend](/deepseek-harness/en/reference/subsystems/session-telemetry.md): 会话和持久性
+- [LLM 流式传输](/deepseek-harness/en/reference/subsystems/llm-streaming.md): 模型和上下文
+- [令牌计量](/deepseek-harness/en/reference/subsystems/token-meter.md): 模型和上下文
+- [系统提示](/deepseek-harness/en/reference/subsystems/system-prompt.md): 模型和上下文
+- [压缩](/deepseek-harness/en/reference/subsystems/compaction.md): 模型和上下文
+- [工具](/deepseek-harness/en/reference/subsystems/tools.md): 执行和工具
+- [Bash 执行](/deepseek-harness/en/reference/subsystems/shell.md): 执行和工具
+- [子进程](/deepseek-harness/en/reference/subsystems/subprocess.md): 执行和工具
+- [PTY 会话](/deepseek-harness/en/reference/subsystems/terminal.md): 执行和工具
+- [后台作业](/deepseek-harness/en/reference/subsystems/jobs.md): 执行和工具
+- [文件系统](/deepseek-harness/en/reference/subsystems/filesystem.md): 执行和工具
+- [LSP 导航](/deepseek-harness/en/reference/subsystems/lsp.md): 执行和工具
+- [PTC 运行时](/deepseek-harness/en/reference/subsystems/ptc-runtime.md): 执行和工具
+- [Web 访问](/deepseek-harness/en/reference/subsystems/web.md): 执行和工具
+- [技能](/deepseek-harness/en/reference/subsystems/skills.md): 执行和工具
+- [工作流](/deepseek-harness/en/reference/subsystems/workflow.md): 执行和工具
+- [子代理](/deepseek-harness/en/reference/subsystems/subagent.md): 执行和工具
+- [审批](/deepseek-harness/en/reference/subsystems/approval.md): 政策和交互
+- [权限预设](/deepseek-harness/en/reference/subsystems/permission-presets.md): 策略和交互
+- [沙盒](/deepseek-harness/en/reference/subsystems/sandbox.md): 策略和交互
+- [计划模式](/deepseek-harness/en/reference/subsystems/plan.md): 策略和交互
+- [用户交互](/deepseek-harness/en/reference/subsystems/user-questions.md): 策略和交互
+- [人类命令](/deepseek-harness/en/reference/subsystems/commands.md): 策略和交互
+- [目标](/deepseek-harness/en/reference/subsystems/goal.md): 策略与交互
+- [定时提醒](/deepseek-harness/en/reference/subsystems/schedule.md): 策略和交互
+- [HTTP 服务器](/deepseek-harness/en/reference/subsystems/web-server.md): 平台和访问
+- [Web客户端架构](/deepseek-harness/en/reference/subsystems/web-client.md):平台和访问
+- [客户端模块](/deepseek-harness/en/reference/subsystems/client-modules.md): 平台和访问
+- [客户端插槽](/deepseek-harness/en/reference/subsystems/slots.md): 平台和访问
+- [客户端资源](/deepseek-harness/en/reference/subsystems/client-resources.md): 平台和访问
+- [右侧边栏](/deepseek-harness/en/reference/subsystems/sidebar-right.md): 平台和访问
+- [对话组件](/deepseek-harness/en/reference/subsystems/conversation.md): 平台和访问
+- [Typert](/deepseek-harness/en/reference/subsystems/typert.md): 平台和访问
+- [存储](/deepseek-harness/en/reference/subsystems/storage.md): 平台和访问
+- [工作区](/deepseek-harness/en/reference/subsystems/workspace.md): 平台和访问
+- [用户设置](/deepseek-harness/en/reference/subsystems/settings.md): 平台和访问权限
+- [用户凭证](/deepseek-harness/en/reference/subsystems/credentials.md): 平台和访问权限

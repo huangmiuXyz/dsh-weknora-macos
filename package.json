@@ -22,8 +22,9 @@
   ],
   "scripts": {
     "sync-assets": "node scripts/sync-assets.mjs",
-    "test": "node test/check.mjs",
-    "test:e2e": "node test/check.mjs --e2e"
+    "test": "node --test test/retrieval.test.mjs test/api-fetch.test.mjs && node test/check.mjs",
+    "test:e2e": "node test/check.mjs --e2e",
+    "gen-catalog": "node scripts/gen-catalog.mjs"
   },
   "engines": {
     "node": ">=22"
@@ -44,5 +45,9 @@
   ],
   "cpu": [
     "arm64"
-  ]
+  ],
+  "devDependencies": {
+    "openapi-mcp-generator": "^5.0.1",
+    "swagger2openapi": "^7.0.8"
+  }
 }

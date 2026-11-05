@@ -39,10 +39,21 @@ dsh plugin --profile <name> add ./dsh-weknora-macos-0.1.1.tgz
 
 需要 Node ≥ 22 与 DSH 的 `ctx.tools` / `ctx.subprocess` 能力（桌面版与 web profile 都提供）。
 
-## 工具
+## 工具：三级揭示
+
+插件不会一次性把几百个工具塞给模型。可用工具随使用逐级展开：
+
+```
+装好插件                →  weknora_run
+weknora_run 成功        →  + weknora_get_tools
+weknora_get_tools([...]) →  + 该能力组的全部工具
+```
+
+### `weknora_run`
 
 ```ts
-weknora_run()  →  { running, baseUrl, port, state, host, dataDir, startupMs?, note? }
+weknora_run()  →  { running, baseUrl, port, state, host, dataDir, startupMs?, note?,
+                    apiKeyConfigured, apiKeyHint, capabilities }
 ```
 
 | `state` | 含义 |
@@ -51,9 +62,83 @@ weknora_run()  →  { running, baseUrl, port, state, host, dataDir, startupMs?, 
 | `already-running` | 本插件进程里已经在跑 |
 | `adopted` | 已有 WeKnora 在应答（可能是上次 DSH 留下的，或用户自己启的），直接复用 |
 
+三种 `state` 都算成功，成功后 `weknora_get_tools` 才出现。即使没有配置 API Key 也会解锁——
+`weknora_get_tools` 被请求注册时会明确告诉模型缺 Key，比工具干脆不存在更容易排查。
+
 失败会抛错，消息里带子进程最近 20 行输出（Go 的 panic 一行就能定位）。
 
 首次打开页面需要在 WeKnora 里**注册一个本地账号**，这是它自身的行为；工具只负责把服务拉起来。
+
+### `weknora_get_tools`
+
+```ts
+weknora_get_tools()                      →  报告当前状态，不注册任何工具
+weknora_get_tools({ capability: 'search' })  →  注册 search 组
+weknora_get_tools({ capability: 'faq' })     →  再注册 faq 组（另一次调用）
+```
+
+**一次只能注册一种能力。** `capability` 是单个字符串，不是数组——传数组会直接报错并列出
+合法值。要启用多个组就分多次调用。
+
+**累加、幂等**：同一组问两次是空操作；不同组叠加而不是替换。已经注册的工具在本次会话里
+一直可用，只有卸载插件才会全部消失。
+
+| 返回字段 | 含义 |
+|---|---|
+| `registered` | 本次新增的工具名 |
+| `alreadyRegistered` | 请求过、本来就在 |
+| `capabilities` | 累计生效的能力组 |
+| `available` | 还能申请哪些 |
+| `counts` | 每组的操作数，方便权衡要不要申请 |
+
+未知的能力组名会直接报错并列出合法值，而不是静默失败。
+
+### 13 个能力组
+
+| 组 | 数量 | 内容 |
+|---|---:|---|
+| `documents` | 46 | 知识条目 CRUD、导入、解析、分块、标签、图片 |
+| `chat` | 33 | 会话、消息、知识问答、Agent 问答 |
+| `system` | 32 | 系统信息、初始化向导、模型检测、评测 |
+| `mcp` | 30 | MCP 服务、MCP 端点、IM 渠道 |
+| `infra` | 26 | 向量库、存储后端、网络搜索 |
+| `wiki` | 21 | Wiki 页面、目录、修订、lint |
+| `search` | 17 | 知识库 CRUD、检索、置顶、复制 |
+| `datasource` | 16 | 数据源接入、同步、日志 |
+| `memory` | 16 | 跨会话长期记忆 |
+| `faq` | 13 | FAQ 条目、批量更新、导入 |
+| `agents` | 12 | 智能体 CRUD、复制 |
+| `models` | 11 | 模型配置 |
+| `shares` | 2 | 组织共享的知识库与智能体 |
+
+总计 **275 个工具**，覆盖本机 Lite + 工作区 API Key 真正能调通的全部操作。
+
+### 为什么不是 432 个
+
+WeKnora 0.9.0 的 Swagger 有 432 个操作，其中 157 个本机跑不通，注册了只会让模型白跑一趟：
+
+| 数量 | 原因 |
+|---:|---|
+| 46 | `/tenants`、`/automations`、`/notifications` —— 裸 group，**API Key 默认拒绝**，只能登录用户调 |
+| 27 | `/sandbox-configs`、`/skills` —— 打包的二进制没有 `desktop` tag，沙箱是 stub |
+| 27 | `/auth`、`/me` —— 登录流程和个人会话，不是工具语义 |
+| 25 | `/organizations` —— `not_supported_in_lite` |
+| 23 | `/system/admin` —— 平台管理员，工作区 Key 一律 403 |
+| 6 | `/agent/*`、`/mcp-oauth` —— 会话内审批回调 |
+| 2 | `/embed/*`、`/im/callback` —— 匿名访客端点，用 Embed token |
+| 1 | `graph-search` —— `NEO4J_ENABLE=false` |
+
+## 重新生成 catalog
+
+工具表是生成件，不要手改：
+
+```sh
+node scripts/gen-catalog.mjs <WeKnora 源码>/docs/swagger.json
+```
+
+升级内置 WeKnora 版本后重跑一次。生成器用 `openapi-mcp-generator`（现成库，MIT）解析
+OpenAPI，自己的代码只做三件该库做不了的事：过滤本机跑不通的操作、给每个操作起一个
+模型能读的名字、把嵌套配置裁剪到 4 层（否则单个 schema 能到 24 KB）。
 
 ## 工具卡片
 

@@ -83,6 +83,9 @@ async function currentState(supervisor, config, credentials) {
     configured: key !== undefined,
     hint: maskKey(key ?? ''),
     running: supervisor.running,
+    // A card that only knows `running` renders "未启动" during a cold start,
+    // which reads as "the call failed" while it is in fact still working.
+    starting: supervisor.starting,
     baseUrl: supervisor.baseUrl ?? null,
     port: address?.port ?? null,
     host: config.host,
@@ -118,7 +121,11 @@ export function registerApiKeyRoute(ctx, supervisor, { config, credentials, fetc
       const body = await readJsonBody(req)
       const address = serverAddress(supervisor, config)
       if (address === null) {
-        sendJson(res, 409, { ok: false, error: 'WeKnora 还没有启动，请先调用一次 weknora_run' })
+        const error =
+          supervisor.starting === true
+            ? 'WeKnora 正在启动中，稍候再保存 API Key'
+            : 'WeKnora 还没有启动，请先调用一次 weknora_run'
+        sendJson(res, 409, { ok: false, error })
         return
       }
       // A DELETE arrives as POST { clear: true }: the same route, one body field.
@@ -178,7 +185,15 @@ export function registerBrowserRoute(ctx, supervisor, { config, webServer, log =
       const address = serverAddress(supervisor, config)
       const url = supervisor.baseUrl ?? (address === null ? null : `http://${address.host}:${address.port}/`)
       if (supervisor.running !== true || url === null) {
-        sendJson(res, 409, { ok: false, error: 'WeKnora 还没有启动，请先调用一次 weknora_run' })
+        // Three different situations, three different answers: a cold start is
+        // "wait", not "start one". Telling a user to call weknora_run while that
+        // very call is still migrating the database is the message being wrong,
+        // not the state.
+        const error =
+          supervisor.starting === true
+            ? 'WeKnora 正在启动中（首次启动要建库和迁移，可能需要几十秒），请稍候再试'
+            : 'WeKnora 还没有启动，请先调用一次 weknora_run'
+        sendJson(res, 409, { ok: false, error })
         return
       }
       await openExternal(url)

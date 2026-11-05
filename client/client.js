@@ -242,7 +242,11 @@ window.__ModuleLoader__.load({
           .then(function (fresh) {
             setStatus({ loading: false, data: fresh, error: null })
             if (fresh.running !== true || !fresh.baseUrl) {
-              throw new Error('WeKnora 还没有启动，请先调用一次 weknora_run')
+              throw new Error(
+                fresh.starting === true
+                  ? 'WeKnora 正在启动中（首次启动要建库和迁移），请稍候再试'
+                  : 'WeKnora 还没有启动，请先调用一次 weknora_run'
+              )
             }
             attemptUrl = fresh.baseUrl
             return fetch(OPEN_ROUTE, { method: 'POST', headers: { accept: 'application/json' } })
@@ -288,7 +292,10 @@ window.__ModuleLoader__.load({
                 ? '运行中 · :' + data.port
                 : running
                   ? '运行中'
-                  : status.loading
+                  // `data` is null until the first status read settles, and again
+                  // if that read failed; every field access has to tolerate it or
+                  // the whole card throws and renders nothing at all.
+                  : status.loading || (data !== null && data.starting === true)
                     ? '启动中…'
                     : '未启动'
             ),
@@ -301,7 +308,9 @@ window.__ModuleLoader__.load({
                 disabled: opening,
                 title: running
                   ? '用系统默认浏览器打开 WeKnora 页面'
-                  : 'WeKnora 尚未启动：先调用一次 weknora_run，或稍等片刻'
+                  : data !== null && data.starting === true
+                    ? 'WeKnora 正在启动中，稍候即可打开'
+                    : 'WeKnora 尚未启动：先调用一次 weknora_run，或稍等片刻'
               },
               opening ? '打开中…' : '在浏览器打开'
             )
@@ -427,7 +436,11 @@ window.__ModuleLoader__.load({
       })
     }
 
-    exports.name = 'dsh-weknora-macos'
+    // A client half is its own plugin, not a second face of the host plugin: the
+    // loader keys plugin instances by name, and reusing the package name made the
+    // host row and this row collide — the card then never mounted, while the tool
+    // still ran. The name is derived from what this half contributes.
+    exports.name = 'weknora-run-card'
     exports.inject = ['slots']
     exports.apply = apply
     exports.WeknoraCard = WeknoraCard

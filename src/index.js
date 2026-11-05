@@ -16,6 +16,9 @@ import { registerApiKeyRoute, registerBrowserRoute } from './routes.js'
 import { subprocessSpawner } from './spawn.js'
 import { WeknoraSupervisor } from './supervisor.js'
 import { weknoraRunTool } from './tool.js'
+import { retrievalTools } from './tools/retrieval.js'
+import { apiFetchTool } from './tools/api-fetch.js'
+import { resolveApiKey } from './credentials.js'
 
 export const name = 'dsh-weknora-macos'
 
@@ -51,12 +54,80 @@ export function apply(ctx, rawConfig = {}) {
   // stored while the plugin is live must reach the very next tool call.
   const credentials = () => ctx.credentials
 
-  // Registering through `effect` makes the tool disappear with the fiber, which is
-  // what an HMR reload or a profile disable expects.
-  ctx.effect(
-    () => ctx.tools.register(weknoraRunTool(supervisor, { gate, credentials }), 'weknora: weknora_run tool'),
-    'weknora: weknora_run tool'
-  )
+  /**
+   * What a retrieval tool needs at CALL time, never at mount time.
+   *
+   * The port is only known once the server answers (and changes when an instance
+   * on another port is adopted), and the key may be saved between two calls.
+   * Reading both here keeps a long-lived session correct across a child restart.
+   */
+  const accessors = async () => {
+    const current = await supervisor.ensure({})
+    return {
+      baseUrl: `${current.baseUrl.replace(/\/+$/, '')}/api/v1`,
+      apiKey: (await resolveApiKey(credentials)) ?? ''
+    }
+  }
+
+  // Five retrieval helpers plus one generic dispatcher. The helpers exist because
+  // a conversation lives in them; the dispatcher covers the other 270 operations
+  // without spending 270 KB of schema on every request.
+  const retrieval = [...retrievalTools({ accessors }), apiFetchTool({ accessors })]
+
+  /**
+   * The tools `weknora_run` reveals once the server answers.
+   *
+   * Mounting all seven immediately would list five tools that can only fail until
+   * a server exists — the model would try a search, get "无法连接", and have to
+   * discover `weknora_run` on its own. Showing ONE tool that says "start me" is a
+   * smaller surface for the same path.
+   *
+   * Registration is idempotent because `weknora_run` is called more than once per
+   * session (every restart, every adopted instance). `revealed` is the guard; the
+   * disposers are owned by this fiber so a reload takes them down with it.
+   */
+  let revealed = false
+  const revealDisposers = []
+  const reveal = () => {
+    if (revealed) return retrieval.map((definition) => definition.name)
+    revealed = true
+    const names = []
+    for (const definition of retrieval) {
+      try {
+        revealDisposers.push(ctx.tools.register(definition, `weknora: ${definition.name}`))
+        names.push(definition.name)
+      } catch (error) {
+        hostLog(`注册 ${definition.name} 失败：${String(error?.message ?? error)}`)
+      }
+    }
+    hostLog(`已注册 ${names.length} 个检索工具`)
+    return names
+  }
+
+  ctx.effect(() => {
+    const disposeRun = ctx.tools.register(
+      weknoraRunTool(supervisor, { gate, credentials, onReady: reveal }),
+      'weknora: weknora_run tool'
+    )
+    return () => {
+      // The revealed tools go first: a tool that queries a stopped server is worse
+      // than one that is simply absent.
+      for (const dispose of revealDisposers.reverse()) {
+        try {
+          dispose()
+        } catch (error) {
+          hostLog(`卸载工具失败：${String(error?.message ?? error)}`)
+        }
+      }
+      revealDisposers.length = 0
+      revealed = false
+      try {
+        disposeRun()
+      } catch (error) {
+        hostLog(`卸载 weknora_run 失败：${String(error?.message ?? error)}`)
+      }
+    }
+  }, 'weknora: tools')
 
   // The tool card's backend: a same-origin route the client half posts a key to.
   // `webServer` is awaited rather than probed: at apply time the service is not

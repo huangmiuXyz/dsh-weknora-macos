@@ -75,6 +75,18 @@ export class WeknoraSupervisor {
   }
 
   /**
+   * Whether an attempt to make the server reachable is in flight.
+   *
+   * Distinct from `running`: during a cold start (database creation, migration)
+   * the child exists but does not answer yet, and a card that conflated the two
+   * would tell the user to "call weknora_run first" while the call it is asking
+   * for is the one already running.
+   */
+  get starting() {
+    return this.pending !== null
+  }
+
+  /**
    * Make the server reachable.
    *
    * Concurrent calls share one attempt: two tool calls in the same step must not

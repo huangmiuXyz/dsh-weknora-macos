@@ -1,5 +1,7 @@
 # Dependencies
 node_modules/
+# npm's lockfile; this package ships no lockfile at all (see the release note).
+package-lock.json
 
 # Packed release artifact (`pnpm pack`); attached to GitHub Releases instead.
 *.tgz
