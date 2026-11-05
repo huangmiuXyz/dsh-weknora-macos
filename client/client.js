@@ -81,17 +81,30 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Read the card state, then retry briefly while the server is not up.
+     * How long the card keeps re-reading while the server is not up yet.
      *
-     * The card mounts at the tool call's "start" phase, before `weknora_run` has
-     * spawned the server, so the first answer is legitimately `running: false`.
-     * A single fetch would freeze that answer into the card forever; the retry
-     * window covers the first-call migration and every later start.
+     * This must outlast a first start, not a page load: the first call creates
+     * and migrates the SQLite database, which measured 6.3 s on this machine and
+     * is allowed up to the plugin's 120 s `startupTimeoutMs`. The previous window
+     * (8 tries x 700 ms ≈ 5.6 s) expired *before* a first boot finished, which
+     * froze `running: false` into the card forever: the button then stayed
+     * disabled with no explanation, and clicking it did nothing at all.
      */
-    function readState(setState) {
+    var POLL_INTERVAL_MS = 800
+    var POLL_BUDGET_MS = 130000
+    /** Slow down once the quick window is exhausted, so an idle tab is not chatty. */
+    var POLL_SLOW_INTERVAL_MS = 3000
+
+    function readState(setState, options) {
       var alive = true
       var timer = null
-      var attempts = 0
+      var startedAt = Date.now()
+      var opts = options || {}
+      var budgetMs = typeof opts.budgetMs === 'number' ? opts.budgetMs : POLL_BUDGET_MS
+
+      function schedule(delay) {
+        timer = setTimeout(load, delay)
+      }
 
       function load() {
         fetch(ROUTE, { headers: { accept: 'application/json' } })
@@ -102,14 +115,17 @@ window.__ModuleLoader__.load({
           .then(function (data) {
             if (!alive) return
             setState({ loading: false, data: data, error: null })
-            attempts += 1
-            if (data.running !== true && attempts < 8) {
-              timer = setTimeout(load, 700)
+            if (data.running === true) return
+            if (Date.now() - startedAt < budgetMs) {
+              var elapsed = Date.now() - startedAt
+              schedule(elapsed < 30000 ? POLL_INTERVAL_MS : POLL_SLOW_INTERVAL_MS)
             }
           })
           .catch(function (error) {
             if (!alive) return
             setState({ loading: false, data: null, error: String((error && error.message) || error) })
+            // The host may still be booting its web server; keep trying quietly.
+            if (Date.now() - startedAt < budgetMs) schedule(POLL_SLOW_INTERVAL_MS)
           })
       }
 
@@ -196,29 +212,63 @@ window.__ModuleLoader__.load({
         }
       }
 
+      /**
+       * Open the running server in the system browser.
+       *
+       * Two rules learned from a card that appeared to do nothing:
+       *
+       * - Never `return` silently. A click with no address, no running server, or
+       *   a stale card must say so; an inert button looks broken.
+       * - Re-read the state first. The snapshot this card holds may predate the
+       *   server becoming ready (the call's `result` phase can arrive before the
+       *   first probe succeeds), and acting on that stale snapshot was exactly
+       *   why the button did nothing.
+       */
       function openBrowser() {
-        var url = data && data.baseUrl
-        if (!url || opening) return
-        setOpening(true)
+        if (opening) return
         setFailure('')
-        fetch(OPEN_ROUTE, { method: 'POST', headers: { accept: 'application/json' } })
+        setMessage('')
+        setOpening(true)
+        // The address this attempt learned, so the fallback below never reads a
+        // stale render-time snapshot.
+        var attemptUrl = null
+
+        // Fresh state, not the render-time snapshot.
+        fetch(ROUTE, { headers: { accept: 'application/json' } })
           .then(function (response) {
-            return response.json().then(function (body) {
-              if (!response.ok || body.ok !== true) throw new Error(body.error || 'HTTP ' + response.status)
-              return body
-            })
+            if (!response.ok) throw new Error('HTTP ' + response.status)
+            return response.json()
           })
-          .then(function () {
-            setOpening(false)
-          })
-          .catch(function () {
-            // An old host has no route; the browser tab is the next best thing.
-            setOpening(false)
-            try {
-              window.open(url, '_blank', 'noopener')
-            } catch (error) {
-              setFailure('无法打开浏览器：' + String((error && error.message) || error))
+          .then(function (fresh) {
+            setStatus({ loading: false, data: fresh, error: null })
+            if (fresh.running !== true || !fresh.baseUrl) {
+              throw new Error('WeKnora 还没有启动，请先调用一次 weknora_run')
             }
+            attemptUrl = fresh.baseUrl
+            return fetch(OPEN_ROUTE, { method: 'POST', headers: { accept: 'application/json' } })
+              .then(function (response) {
+                return response.json().then(function (body) {
+                  if (!response.ok || body.ok !== true) throw new Error(body.error || 'HTTP ' + response.status)
+                  setOpening(false)
+                  setMessage('已在系统浏览器打开：' + (body.url || fresh.baseUrl))
+                })
+              })
+          })
+          .catch(function (error) {
+            setOpening(false)
+            // The host route can be missing on an older host; a plain tab is next.
+            // Only when a running address was actually confirmed: falling back on a
+            // server that is not up would open a dead page and hide the real reason.
+            if (attemptUrl !== null && typeof window !== 'undefined' && typeof window.open === 'function') {
+              try {
+                window.open(attemptUrl, '_blank', 'noopener')
+                setMessage('已在浏览器标签页打开：' + attemptUrl)
+                return
+              } catch {
+                /* fall through to the message */
+              }
+            }
+            setFailure('无法打开浏览器：' + String((error && error.message) || error))
           })
       }
 
@@ -234,7 +284,13 @@ window.__ModuleLoader__.load({
             h(
               'span',
               { style: mutedStyle() },
-              running && data.port ? '运行中 · :' + data.port : running ? '运行中' : '未启动'
+              running && data.port
+                ? '运行中 · :' + data.port
+                : running
+                  ? '运行中'
+                  : status.loading
+                    ? '启动中…'
+                    : '未启动'
             ),
             h(
               'button',
@@ -242,8 +298,10 @@ window.__ModuleLoader__.load({
                 type: 'button',
                 style: buttonStyle(false),
                 onClick: openBrowser,
-                disabled: opening || !running,
-                title: '用系统默认浏览器打开 WeKnora 页面'
+                disabled: opening,
+                title: running
+                  ? '用系统默认浏览器打开 WeKnora 页面'
+                  : 'WeKnora 尚未启动：先调用一次 weknora_run，或稍等片刻'
               },
               opening ? '打开中…' : '在浏览器打开'
             )
